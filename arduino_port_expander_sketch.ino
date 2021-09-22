@@ -214,11 +214,11 @@ void onRequest()
 #define CMD_SETUP_PIN_INPUT_PULLUP 0x6
 #define CMD_SETUP_PIN_INPUT 0x7
 
-// 8 analog registers.. A0 to A7
+// 8 analog registers.. A0 to A14
 // A4 and A5 on Arduino Uno are not supported due to I2C
 #define CMD_ANALOG_READ_A0 0b1000 // 0x8
 // ....
-#define CMD_ANALOG_READ_A15 10111 //17 0x11
+#define CMD_ANALOG_READ_A14 0b10000 //16
 
 #define CMD_SETUP_ANALOG_INTERNAL 0x10
 #define CMD_SETUP_ANALOG_DEFAULT 0x12
@@ -238,9 +238,9 @@ void onReceive(int numBytes)
     break;
   }
 
-  if (cmd >= CMD_ANALOG_READ_A0 && cmd <= CMD_ANALOG_READ_A15)
+  if (cmd >= CMD_ANALOG_READ_A0 && cmd <= CMD_ANALOG_READ_A14)
   {
-    readAnalog(cmd & 0b111);
+    readAnalog(cmd & 0b1110);
     return;
   }
 
