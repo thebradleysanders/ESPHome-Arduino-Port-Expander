@@ -33,13 +33,12 @@ static const char *TAGape = "ape";
 // A4 and A5 on Arduino Uno not supported due to I2C
 #define CMD_ANALOG_READ_A0 0b1000 // 0x8 = A0
 // ....
-#define CMD_ANALOG_READ_A15 10111 // 17 = A15 0x11
+#define CMD_ANALOG_READ_A15 10111 // 17 = A15
 
 #define CMD_SETUP_ANALOG_INTERNAL 0x10
-#define CMD_SETUP_ANALOG_DEFAULT 0x12
+#define CMD_SETUP_ANALOG_DEFAULT 0x11
 
-#define get_ape(constructor) static_cast<ArduinoPortExpander *> \
-  (const_cast<custom_component::CustomComponentConstructor *>(&constructor)->get_component(0))
+#define get_ape(constructor) static_cast<ArduinoPortExpander *>(constructor.get_component(0))
 
 #define ape_binary_output(ape, pin) get_ape(ape)->get_binary_output(pin)
 #define ape_binary_sensor(ape, pin) get_ape(ape)->get_binary_sensor(pin)
@@ -105,8 +104,10 @@ protected:
 class ArduinoPortExpander : public Component, public I2CDevice
 {
 public:
-  ArduinoPortExpander(I2CComponent *parent, uint8_t address, bool vref_default = false) : I2CDevice(parent, address)
+  ArduinoPortExpander(I2CBus *bus, uint8_t address, bool vref_default = false)
   {
+    set_i2c_address(address);
+    set_i2c_bus(bus);
     this->vref_default_ = vref_default;
   }
   void setup() override
@@ -131,7 +132,7 @@ public:
         return;
       this->configure_ = try_configure;
 
-      if (this->read_bytes(APE_CMD_DIGITAL_READ, const_cast<uint8_t *>(this->read_buffer_), 9, 1)) //changed 3 to 9
+      if (ERROR_OK == this->read_register(APE_CMD_DIGITAL_READ, const_cast<uint8_t *>(this->read_buffer_), 9)) //changed 3 to 9
       {
 #ifdef APE_LOGGING
         ESP_LOGCONFIG(TAGape, "ArduinoPortExpander found at %#02x", address_);
@@ -139,13 +140,12 @@ public:
         delay(10);
         if (this->vref_default_)
         {
-          this->write_byte(CMD_SETUP_ANALOG_DEFAULT, 0); // 0: unused
+          this->write_register(CMD_SETUP_ANALOG_DEFAULT, nullptr, 0); // 0: unused
         }
 
         // Config success
         this->configure_timeout_ = 0;
         this->status_clear_error();
-
 #ifdef APE_BINARY_SENSOR
         for (ApeBinarySensor *pin : this->input_pins_)
         {
@@ -154,7 +154,7 @@ public:
 #ifdef APE_LOGGING
           ESP_LOGCONFIG(TAGape, "Setup input pin %d", pinNo);
 #endif
-          this->write_byte(APE_CMD_SETUP_PIN_INPUT_PULLUP, pinNo);
+          this->write_register(APE_CMD_SETUP_PIN_INPUT_PULLUP, &pinNo, 1);
           delay(20);
         }
 #endif
@@ -177,7 +177,7 @@ public:
 #ifdef APE_LOGGING
           ESP_LOGCONFIG(TAGape, "Setup analog input pin %d", pinNo);
 #endif
-          this->write_byte(APE_CMD_SETUP_PIN_INPUT, pinNo);
+          this->write_register(APE_CMD_SETUP_PIN_INPUT, &pinNo, 1);
           delay(20);
         }
 #endif
@@ -196,7 +196,7 @@ public:
     }
 
 #ifdef APE_BINARY_SENSOR
-    if (!this->read_bytes(APE_CMD_DIGITAL_READ, const_cast<uint8_t *>(this->read_buffer_), 9, 1)) //Changed this from 3 to 9
+    if (ERROR_OK != this->read_register(APE_CMD_DIGITAL_READ, const_cast<uint8_t *>(this->read_buffer_), 9)) //Changed this from 3 to 9
     {
 #ifdef APE_LOGGING
       ESP_LOGE(TAGape, "Error reading. Reconfiguring pending.");
@@ -252,7 +252,7 @@ public:
 #ifdef APE_SENSOR
   uint16_t analogRead(uint8_t pin)
   {
-    bool ok = this->read_bytes((uint8_t)(CMD_ANALOG_READ_A0 + pin), const_cast<uint8_t *>(this->read_buffer_), 2, 1);
+    bool ok = (ERROR_OK == this->read_register((uint8_t)(CMD_ANALOG_READ_A0 + pin), const_cast<uint8_t *>(this->read_buffer_), 2));
 #ifdef APE_LOGGING
     ESP_LOGVV(TAGape, "analog read pin: %d ok: %d byte0: %d byte1: %d", pin, ok, this->read_buffer_[0], this->read_buffer_[1]);
 #endif
@@ -292,7 +292,7 @@ public:
 #ifdef APE_LOGGING
     ESP_LOGD(TAGape, "Writing %d to pin %d", state, pin);
 #endif
-    this->write_byte(state ? APE_CMD_WRITE_DIGITAL_HIGH : APE_CMD_WRITE_DIGITAL_LOW, pin);
+    this->write_register(state ? APE_CMD_WRITE_DIGITAL_HIGH : APE_CMD_WRITE_DIGITAL_LOW, &pin, 1);
     if (setup)
     {
       App.feed_wdt();
@@ -300,7 +300,7 @@ public:
 #ifdef APE_LOGGING
       ESP_LOGI(TAGape, "Setup output pin %d", pin);
 #endif
-      this->write_byte(APE_CMD_SETUP_PIN_OUTPUT, pin);
+      this->write_register(APE_CMD_SETUP_PIN_OUTPUT, &pin, 1);
     }
   }
 
